@@ -1,0 +1,230 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+html, body, #root, *, *::before, *::after {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+#root::-webkit-scrollbar,
+*::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
+}
+
+@layer base {
+  :root {
+    --color-ink: #1B1B3A;
+    --color-ink-muted: #4B4A68;
+    --color-ink-light: #5A5978;
+    --color-dark-btn: #15152B;
+    --color-accent-blue: #6FA8FF;
+    --color-success: #34C77B;
+    --font-serif: 'Instrument Serif', Georgia, serif;
+    --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    color: var(--color-ink);
+    background-color: #e9e6f2;
+    overflow-x: hidden;
+    margin: 0;
+    padding: 0;
+  }
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.font-serif {
+  font-family: 'Instrument Serif', Georgia, serif;
+}
+
+.font-sans {
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+.glass-surface {
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  box-shadow: 0 8px 30px rgba(120, 110, 200, 0.15);
+}
+
+.dark .glass-surface {
+  background: rgba(20, 20, 42, 0.58);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+}
+
+.glass-pill {
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  box-shadow: 0 8px 24px rgba(120, 110, 200, 0.12);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-pill:hover {
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.62);
+  box-shadow: 0 12px 30px rgba(120, 110, 200, 0.22);
+}
+
+.dark .glass-pill {
+  background: rgba(26, 26, 52, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.dark .glass-pill:hover {
+  background: rgba(36, 36, 72, 0.75);
+  border-color: rgba(255, 255, 255, 0.3);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+.glass-pill-active {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 0 4px 20px rgba(120, 110, 200, 0.18);
+}
+
+.dark .glass-pill-active {
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+button:focus-visible, a:focus-visible {
+  outline: 2px solid #1B1B3A;
+  outline-offset: 2px;
+}
+
+.dark button:focus-visible, .dark a:focus-visible {
+  outline: 2px solid #8cbaff;
+  outline-offset: 2px;
+}
+
+@keyframes collieFloat {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+.animate-collie-float {
+  animation: collieFloat 6s ease-in-out infinite;
+}
+@keyframes petalDrift1 {
+  0% {
+    transform: translate(0, 0) rotate(0deg) scale(0.9);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.85;
+  }
+  85% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translate(240px, 340px) rotate(320deg) scale(1.05);
+    opacity: 0;
+  }
+}
+
+@keyframes petalDrift2 {
+  0% {
+    transform: translate(0, 0) rotate(45deg) scale(0.8);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.8;
+  }
+  80% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: translate(320px, 280px) rotate(420deg) scale(1);
+    opacity: 0;
+  }
+}
+
+.animate-petal-1 {
+  animation: petalDrift1 12s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.animate-petal-2 {
+  animation: petalDrift2 15s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes haloSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-halo-spin {
+  animation: haloSpin 28s linear infinite;
+}
+@keyframes bubbleEntrance {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0px) scale(1);
+  }
+}
+
+.animate-bubble-in {
+  animation: bubbleEntrance 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.3s forwards;
+}
+
+@keyframes particleFloat {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(0.6) translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.25) translateY(-24px);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.9) translateY(-60px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-collie-float,
+  .animate-petal-1,
+  .animate-petal-2,
+  .animate-halo-spin,
+  .animate-bubble-in {
+    animation: none !important;
+    transform: none !important;
+  }
+  .animate-petal-1,
+  .animate-petal-2 {
+    opacity: 0.75 !important;
+  }
+}
