@@ -6,3 +6,4 @@ if __name__ == "__main__":
     host = os.environ.get("HOST", "0.0.0.0")
     print(f"[Collide] Starting FastAPI backend on {host}:{port}...")
     uvicorn.run("app.main:app", host=host, port=port, log_level="info")
+

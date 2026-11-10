@@ -46,6 +46,8 @@ interface SocialDiscoveryContextType {
   sendMessage: (text: string) => void;
   sendVoiceMessage: (audioBlob: Blob, durationSeconds: number) => void;
   sendCopilotPrompt: (prompt: string) => void;
+  registerWebRTCListener: (listener: (msg: { event: string; payload: any }) => void) => () => void;
+  sendWebRTCSignal: (event: 'webrtc.offer' | 'webrtc.answer' | 'webrtc.ice_candidate', payload: any) => void;
   startInteractiveGame: (game: 'tictactoe' | 'trivia' | 'wyr' | null) => void;
   playTicTacToeMove: (cellIndex: number) => void;
   resetTicTacToe: () => void;
@@ -103,6 +105,21 @@ const INITIAL_TIC_TAC_TOE: TicTacToeState = {
 export const SocialDiscoveryProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const wsRef = useRef<WebSocket | null>(null);
   const pendingQueueJoinRef = useRef<{ mode: ChatMode; algorithm: MatchAlgorithm } | null>(null);
+  const currentPartnerRef = useRef<MatchPartner | null>(null);
+  const webrtcListenersRef = useRef<((msg: { event: string; payload: any }) => void)[]>([]);
+
+  const registerWebRTCListener = useCallback((listener: (msg: { event: string; payload: any }) => void) => {
+    webrtcListenersRef.current.push(listener);
+    return () => {
+      webrtcListenersRef.current = webrtcListenersRef.current.filter((l) => l !== listener);
+    };
+  }, []);
+
+  const sendWebRTCSignal = useCallback((event: 'webrtc.offer' | 'webrtc.answer' | 'webrtc.ice_candidate', payload: any) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ event, payload }));
+    }
+  }, []);
 
   const [authUser, setAuthUser] = useState<AuthUser | null>(() => {
     try {
@@ -301,8 +318,14 @@ export const SocialDiscoveryProvider: React.FC<{ children: ReactNode }> = ({ chi
             const data = JSON.parse(event.data);
             const { event: evt, payload } = data;
 
+            if (evt === 'webrtc.offer' || evt === 'webrtc.answer' || evt === 'webrtc.ice_candidate') {
+              webrtcListenersRef.current.forEach((listener) => listener({ event: evt, payload }));
+              return;
+            }
+
             if (evt === 'match.found') {
               const partner: MatchPartner = payload.partner;
+              currentPartnerRef.current = partner;
               setCurrentPartner(partner);
               setMatchStatus('connected');
               const welcomeMsg: ChatMessage = {
@@ -335,7 +358,7 @@ export const SocialDiscoveryProvider: React.FC<{ children: ReactNode }> = ({ chi
               const reactionMsg: ChatMessage = {
                 id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
                 senderId: payload.userId,
-                senderName: currentPartner?.pseudonym || 'Stranger',
+                senderName: currentPartnerRef.current?.pseudonym || 'Stranger',
                 text: emojiChar,
                 timestamp: Date.now(),
               };
@@ -367,19 +390,21 @@ export const SocialDiscoveryProvider: React.FC<{ children: ReactNode }> = ({ chi
               setConnectionStatus('received');
             } else if (evt === 'connection.accept') {
               setConnectionStatus('connected');
-              if (currentPartner) {
+              const partner = currentPartnerRef.current;
+              if (partner) {
                 const newConnection: MutualConnection = {
                   id: `conn-${Date.now()}`,
-                  partnerId: currentPartner.id,
-                  partnerName: currentPartner.pseudonym,
-                  partnerAvatar: currentPartner.avatarUrl,
-                  partnerCountry: currentPartner.country,
-                  sharedInterests: currentPartner.sharedInterests,
+                  partnerId: partner.id,
+                  partnerName: partner.pseudonym,
+                  partnerAvatar: partner.avatarUrl,
+                  partnerCountry: partner.country,
+                  sharedInterests: partner.sharedInterests,
                   connectedAt: Date.now(),
                 };
-                setSavedConnections((prev) => [newConnection, ...prev.filter((c) => c.partnerId !== currentPartner.id)]);
+                setSavedConnections((prev) => [newConnection, ...prev.filter((c) => c.partnerId !== partner.id)]);
               }
             } else if (evt === 'match.ended') {
+              currentPartnerRef.current = null;
               setMatchStatus('ended');
               setCurrentPartner(null);
               setActiveGame(null);
@@ -413,7 +438,7 @@ export const SocialDiscoveryProvider: React.FC<{ children: ReactNode }> = ({ chi
       }
       wsRef.current = null;
     };
-  }, [userProfile.id, currentPartner]);
+  }, [userProfile.id]);
   const startSearching = useCallback(
     (mode?: ChatMode, algorithm?: MatchAlgorithm) => {
       const targetMode = mode || chatMode;
@@ -480,6 +505,7 @@ export const SocialDiscoveryProvider: React.FC<{ children: ReactNode }> = ({ chi
       );
     }
     setMatchStatus('searching');
+    currentPartnerRef.current = null;
     setCurrentPartner(null);
     setMessages([]);
     setActiveGame(null);
@@ -490,6 +516,7 @@ export const SocialDiscoveryProvider: React.FC<{ children: ReactNode }> = ({ chi
       wsRef.current.send(JSON.stringify({ event: 'match.disconnect' }));
     }
     setMatchStatus('ended');
+    currentPartnerRef.current = null;
     setCurrentPartner(null);
     setActiveGame(null);
   }, []);
@@ -1027,6 +1054,8 @@ export const SocialDiscoveryProvider: React.FC<{ children: ReactNode }> = ({ chi
         sendMessage,
         sendVoiceMessage,
         sendCopilotPrompt,
+        registerWebRTCListener,
+        sendWebRTCSignal,
         startInteractiveGame,
         playTicTacToeMove,
         resetTicTacToe,

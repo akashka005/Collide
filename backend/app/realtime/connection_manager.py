@@ -11,6 +11,14 @@ class ConnectionManager:
         await websocket.accept()
         self.active_connections[user_id] = websocket
         logger.info(f"User {user_id} connected via WebSocket.")
+        try:
+            from app.services.room_service import room_service
+            room_id = await room_service.get_user_room_id(user_id)
+            if room_id:
+                self.join_room(room_id, user_id)
+                logger.info(f"Re-joined user {user_id} to active room {room_id}")
+        except Exception:
+            pass
     def disconnect(self, user_id: str):
         if user_id in self.active_connections:
             del self.active_connections[user_id]
@@ -41,8 +49,17 @@ class ConnectionManager:
                 logger.warning(f"Error sending message to {user_id}: {e}")
 
     async def broadcast_to_room(self, room_id: str, message: Dict[str, Any], exclude_user_id: Optional[str] = None):
-        members = self.room_members.get(room_id, set())
-        for user_id in list(members):
+        members = set(self.room_members.get(room_id, set()))
+        try:
+            from app.services.room_service import room_service
+            room = await room_service.get_room(room_id)
+            if room and "users" in room:
+                for u in room["users"]:
+                    members.add(u)
+        except Exception:
+            pass
+
+        for user_id in members:
             if exclude_user_id and user_id == exclude_user_id:
                 continue
             await self.send_to_user(user_id, message)

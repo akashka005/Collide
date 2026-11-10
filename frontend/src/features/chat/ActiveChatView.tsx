@@ -22,6 +22,7 @@ import {
   Radio,
   Camera,
   RefreshCw,
+  UserCheck,
 } from 'lucide-react';
 import { useSocialDiscovery } from '../../context/SocialDiscoveryContext';
 import { TicTacToeGame } from '../games/TicTacToeGame';
@@ -68,6 +69,9 @@ export const ActiveChatView: React.FC<ActiveChatViewProps> = ({ onLeave, onOpenR
     sendCopilotPrompt,
     connectionStatus,
     sendConnectionRequest,
+    acceptConnectionRequest,
+    registerWebRTCListener,
+    sendWebRTCSignal,
     blockPartner,
     userProfile,
   } = useSocialDiscovery();
@@ -86,6 +90,9 @@ export const ActiveChatView: React.FC<ActiveChatViewProps> = ({ onLeave, onOpenR
   const [copilotMenuOpen, setCopilotMenuOpen] = useState(false);
   const [safetyMenuOpen, setSafetyMenuOpen] = useState(false);
   const localVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const [hasRemoteVideo, setHasRemoteVideo] = useState(false);
+  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -131,6 +138,20 @@ export const ActiveChatView: React.FC<ActiveChatViewProps> = ({ onLeave, onOpenR
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = stream;
           localVideoRef.current.play().catch(() => { });
+        }
+
+        if (peerConnectionRef.current) {
+          const senders = peerConnectionRef.current.getSenders();
+          stream.getTracks().forEach((track) => {
+            const sender = senders.find((s) => s.track?.kind === track.kind || (!s.track && track.kind));
+            if (sender) {
+              sender.replaceTrack(track).catch(() => {});
+            } else {
+              try {
+                peerConnectionRef.current?.addTrack(track, stream);
+              } catch {}
+            }
+          });
         }
         try {
           const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -200,10 +221,111 @@ export const ActiveChatView: React.FC<ActiveChatViewProps> = ({ onLeave, onOpenR
     }
   }, [isMicMuted]);
   useEffect(() => {
-    if (isMicMuted) {
-      setMicVolume(0);
+    if (chatMode !== 'video' || !currentPartner) {
+      if (peerConnectionRef.current) {
+        peerConnectionRef.current.close();
+        peerConnectionRef.current = null;
+      }
+      setHasRemoteVideo(false);
+      return;
     }
-  }, [isMicMuted]);
+
+    const pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+      ],
+    });
+    peerConnectionRef.current = pc;
+
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => {
+        pc.addTrack(track, streamRef.current!);
+      });
+    }
+
+    pc.ontrack = (event) => {
+      if (event.streams && event.streams[0] && remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = event.streams[0];
+        remoteVideoRef.current.play().catch(() => {});
+        setHasRemoteVideo(true);
+      }
+    };
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        sendWebRTCSignal('webrtc.ice_candidate', { candidate: event.candidate });
+      }
+    };
+
+    const pendingCandidates: RTCIceCandidateInit[] = [];
+
+    const unregister = registerWebRTCListener(async ({ event, payload }) => {
+      try {
+        if (event === 'webrtc.offer') {
+          await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+          while (pendingCandidates.length > 0) {
+            const cand = pendingCandidates.shift();
+            if (cand) {
+              try {
+                await pc.addIceCandidate(new RTCIceCandidate(cand));
+              } catch {}
+            }
+          }
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          sendWebRTCSignal('webrtc.answer', { sdp: answer });
+        } else if (event === 'webrtc.answer') {
+          if (pc.signalingState !== 'stable') {
+            await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+            while (pendingCandidates.length > 0) {
+              const cand = pendingCandidates.shift();
+              if (cand) {
+                try {
+                  await pc.addIceCandidate(new RTCIceCandidate(cand));
+                } catch {}
+              }
+            }
+          }
+        } else if (event === 'webrtc.ice_candidate') {
+          if (payload.candidate) {
+            if (pc.remoteDescription && pc.remoteDescription.type) {
+              try {
+                await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
+              } catch {}
+            } else {
+              pendingCandidates.push(payload.candidate);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[Collide WebRTC warning]', err);
+      }
+    });
+
+    // Deterministic caller: user with lexicographically higher ID initiates offer
+    const isCaller = userProfile.id > currentPartner.id;
+    let offerTimer: NodeJS.Timeout | null = null;
+    if (isCaller) {
+      offerTimer = setTimeout(async () => {
+        try {
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          sendWebRTCSignal('webrtc.offer', { sdp: offer });
+        } catch (err) {
+          console.warn('[Collide WebRTC offer error]', err);
+        }
+      }, 600);
+    }
+
+    return () => {
+      if (offerTimer) clearTimeout(offerTimer);
+      unregister();
+      pc.close();
+      peerConnectionRef.current = null;
+      setHasRemoteVideo(false);
+    };
+  }, [chatMode, currentPartner?.id, registerWebRTCListener, sendWebRTCSignal, userProfile.id]);
   const startVoiceRecording = async () => {
     try {
       setIsRecordingVoice(true);
@@ -510,13 +632,15 @@ export const ActiveChatView: React.FC<ActiveChatViewProps> = ({ onLeave, onOpenR
             )}
           </div>
           <button
-            onClick={sendConnectionRequest}
+            onClick={connectionStatus === 'received' ? acceptConnectionRequest : sendConnectionRequest}
             disabled={connectionStatus === 'connected' || connectionStatus === 'sent'}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer ${connectionStatus === 'connected'
                 ? 'bg-emerald-500 text-white shadow-xs'
                 : connectionStatus === 'sent'
                   ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/60'
-                  : 'glass-pill text-[#1B1B3A] dark:text-white'
+                  : connectionStatus === 'received'
+                    ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-md animate-pulse ring-2 ring-emerald-400'
+                    : 'glass-pill text-[#1B1B3A] dark:text-white'
               }`}
           >
             {connectionStatus === 'connected' ? (
@@ -526,6 +650,11 @@ export const ActiveChatView: React.FC<ActiveChatViewProps> = ({ onLeave, onOpenR
               </>
             ) : connectionStatus === 'sent' ? (
               <span>Request Sent...</span>
+            ) : connectionStatus === 'received' ? (
+              <>
+                <UserCheck className="w-3.5 h-3.5 text-white" />
+                <span>Accept Request</span>
+              </>
             ) : (
               <>
                 <UserPlus className="w-3.5 h-3.5 text-purple-500" />
@@ -593,36 +722,44 @@ export const ActiveChatView: React.FC<ActiveChatViewProps> = ({ onLeave, onOpenR
         {chatMode === 'video' && (
           <div className="w-full lg:w-[55%] flex flex-col gap-3">
             <div className="relative flex-1 min-h-[300px] sm:min-h-[360px] rounded-3xl glass-surface border border-white/70 dark:border-white/15 overflow-hidden shadow-xl bg-slate-900 flex items-center justify-center">
-              <div className="absolute inset-0 bg-radial from-slate-800 via-slate-900 to-[#0b0b1c] flex items-center justify-center">
-                <div className="relative flex flex-col items-center">
-                  <div className="relative w-28 h-28 sm:w-36 sm:h-36 rounded-full overflow-hidden ring-4 ring-[#6FA8FF]/40 shadow-2xl mb-3">
-                    <img
-                      src={currentPartner.avatarUrl}
-                      alt={currentPartner.pseudonym}
-                      className="w-full h-full object-cover filter contrast-105"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
-                  </div>
-                  <div className="flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-black/60 backdrop-blur-md text-white text-xs font-medium border border-white/20 shadow-md">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>{currentPartner.pseudonym} ({currentPartner.country})</span>
-                    <div className="flex items-end gap-0.5 h-3 ml-1">
-                      <span
-                        className={`w-0.5 rounded-full bg-emerald-400 transition-all duration-150 ${partnerSpeaking ? 'h-3' : 'h-1'
-                          }`}
+              <video
+                ref={remoteVideoRef}
+                autoPlay
+                playsInline
+                className={`w-full h-full object-cover transition-opacity duration-300 ${hasRemoteVideo ? 'opacity-100' : 'opacity-0 absolute pointer-events-none'}`}
+              />
+              {!hasRemoteVideo && (
+                <div className="absolute inset-0 bg-radial from-slate-800 via-slate-900 to-[#0b0b1c] flex items-center justify-center">
+                  <div className="relative flex flex-col items-center">
+                    <div className="relative w-28 h-28 sm:w-36 sm:h-36 rounded-full overflow-hidden ring-4 ring-[#6FA8FF]/40 shadow-2xl mb-3">
+                      <img
+                        src={currentPartner.avatarUrl}
+                        alt={currentPartner.pseudonym}
+                        className="w-full h-full object-cover filter contrast-105"
                       />
-                      <span
-                        className={`w-0.5 rounded-full bg-emerald-400 transition-all duration-150 ${partnerSpeaking ? 'h-2.5' : 'h-1'
-                          }`}
-                      />
-                      <span
-                        className={`w-0.5 rounded-full bg-emerald-400 transition-all duration-150 ${partnerSpeaking ? 'h-3.5' : 'h-1'
-                          }`}
-                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
+                    </div>
+                    <div className="flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-black/60 backdrop-blur-md text-white text-xs font-medium border border-white/20 shadow-md">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                      <span>{currentPartner.pseudonym} ({currentPartner.country})</span>
+                      <div className="flex items-end gap-0.5 h-3 ml-1">
+                        <span
+                          className={`w-0.5 rounded-full bg-emerald-400 transition-all duration-150 ${partnerSpeaking ? 'h-3' : 'h-1'
+                            }`}
+                        />
+                        <span
+                          className={`w-0.5 rounded-full bg-emerald-400 transition-all duration-150 ${partnerSpeaking ? 'h-2.5' : 'h-1'
+                            }`}
+                        />
+                        <span
+                          className={`w-0.5 rounded-full bg-emerald-400 transition-all duration-150 ${partnerSpeaking ? 'h-3.5' : 'h-1'
+                            }`}
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              )}
               <div className="absolute bottom-4 right-4 w-36 sm:w-44 aspect-video rounded-2xl overflow-hidden glass-surface border-2 border-white/80 shadow-2xl bg-black z-20">
                 {!isCameraOff ? (
                   !useVirtualCam && cameraHasHardware ? (

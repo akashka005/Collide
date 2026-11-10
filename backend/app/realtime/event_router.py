@@ -73,34 +73,28 @@ class EventRouter:
             country=profile_data.get("country", "Earth"),
         )
 
-        room_id, partner = await matching_service.add_to_queue(profile, mode, algorithm)
+        room_id, user_partner, peer_partner = await matching_service.add_to_queue(profile, mode, algorithm)
 
-        if room_id and partner:
+        if room_id and user_partner and peer_partner:
             connection_manager.join_room(room_id, user_id)
-            connection_manager.join_room(room_id, partner.id)
-            # Send match.found to the NEW user — their partner is the waiting peer
+            connection_manager.join_room(room_id, user_partner.id)
             await connection_manager.send_to_user(user_id, {
                 "event": "match.found",
                 "payload": {
                     "roomId": room_id,
-                    "partner": partner.model_dump(),
+                    "partner": user_partner.model_dump(),
                 },
                 "timestamp": int(time.time() * 1000)
             })
-            # Send match.found to the WAITING peer — their partner is the new user.
-            # get_partner_profile(user_id) returns the new user's profile as seen by the peer.
-            peer_sees_user = await room_service.get_partner_profile(user_id)
-            if peer_sees_user:
-                await connection_manager.send_to_user(partner.id, {
-                    "event": "match.found",
-                    "payload": {
-                        "roomId": room_id,
-                        "partner": peer_sees_user,
-                    },
-                    "timestamp": int(time.time() * 1000)
-                })
-            else:
-                logger.warning(f"Could not load partner profile for peer {partner.id}, sending minimal data.")
+            await connection_manager.send_to_user(user_partner.id, {
+                "event": "match.found",
+                "payload": {
+                    "roomId": room_id,
+                    "partner": peer_partner.model_dump(),
+                },
+                "timestamp": int(time.time() * 1000)
+            })
+            logger.info(f"Matched room {room_id} between {user_id} ({user_partner.pseudonym}) and {user_partner.id} ({peer_partner.pseudonym})")
         else:
             queue_depth = await matching_service.get_queue_depth(mode)
             await connection_manager.send_to_user(user_id, {

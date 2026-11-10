@@ -56,7 +56,7 @@ class MatchingService:
         user_profile: UserProfile,
         mode: ChatMode,
         algorithm: MatchAlgorithm,
-    ) -> Tuple[Optional[str], Optional[MatchPartner]]:
+    ) -> Tuple[Optional[str], Optional[MatchPartner], Optional[MatchPartner]]:
         redis = await get_redis()
         user_id = user_profile.id
         await self.remove_from_queue(user_id)
@@ -155,7 +155,7 @@ class MatchingService:
                 await redis.lpush(f"recent:{peer_id}", user_id)
                 await redis.ltrim(f"recent:{peer_id}", 0, 1)
 
-                return room_id, peer_partner_for_user
+                return room_id, peer_partner_for_user, user_partner_for_peer
         ticket_payload = {
             "id": user_id,
             "pseudonym": user_profile.pseudonym,
@@ -171,7 +171,7 @@ class MatchingService:
         await redis.hset(my_queue_key, user_id, json.dumps(ticket_payload))
         await redis.set(f"user_waiting_queue:{user_id}", my_queue_key, ex=300)
 
-        return None, None
+        return None, None, None
 
     async def remove_from_queue(self, user_id: str):
         redis = await get_redis()
