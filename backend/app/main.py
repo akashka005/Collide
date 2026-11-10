@@ -38,13 +38,15 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r".*",   # Allow all origins — set specific origins in production via CORS_ORIGINS env var
+    allow_origin_regex=r".*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 api_v1_prefix = "/api/v1"
 app.include_router(health_router, prefix=api_v1_prefix)
 app.include_router(auth_router, prefix=api_v1_prefix)
@@ -57,6 +59,8 @@ app.include_router(moderation_router, prefix=api_v1_prefix)
 app.include_router(webrtc_router, prefix=api_v1_prefix)
 app.include_router(media_router, prefix=api_v1_prefix)
 app.include_router(copilot_router, prefix=api_v1_prefix)
+
+
 @app.get("/health", tags=["Health"])
 async def root_health():
     return {
@@ -66,11 +70,12 @@ async def root_health():
         "environment": settings.ENVIRONMENT,
     }
 
+
+# Primary WebSocket endpoint
 @app.websocket("/api/v1/realtime")
-@app.websocket("/ws/realtime")
 async def websocket_endpoint(
     websocket: WebSocket,
-    userId: str = Query(..., alias="userId")
+    userId: str = Query(..., alias="userId"),
 ):
     await connection_manager.connect(userId, websocket)
     try:
@@ -82,6 +87,16 @@ async def websocket_endpoint(
     except Exception as e:
         logger.error(f"WebSocket error for user {userId}: {e}")
         connection_manager.disconnect(userId)
+
+
+# Alias for legacy / alternative path
+@app.websocket("/ws/realtime")
+async def websocket_endpoint_alias(
+    websocket: WebSocket,
+    userId: str = Query(..., alias="userId"),
+):
+    await websocket_endpoint(websocket, userId)
+
 
 if __name__ == "__main__":
     import uvicorn
