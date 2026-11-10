@@ -16,6 +16,7 @@ import { checkTicTacToeWinner, TRIVIA_BANK, WOULD_YOU_RATHER_BANK } from '../lib
 import { api, WS_BASE_URL, API_BASE_URL } from '../lib/api';
 
 interface SocialDiscoveryContextType {
+  isWsConnected: boolean;
   userProfile: UserProfile;
   authUser: AuthUser | null;
   matchStatus: MatchStatus;
@@ -101,6 +102,7 @@ const INITIAL_TIC_TAC_TOE: TicTacToeState = {
 
 export const SocialDiscoveryProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const wsRef = useRef<WebSocket | null>(null);
+  const pendingQueueJoinRef = useRef<{ mode: ChatMode; algorithm: MatchAlgorithm } | null>(null);
 
   const [authUser, setAuthUser] = useState<AuthUser | null>(() => {
     try {
@@ -145,6 +147,7 @@ export const SocialDiscoveryProvider: React.FC<{ children: ReactNode }> = ({ chi
     }
   }, [authUser]);
 
+  const [isWsConnected, setIsWsConnected] = useState(false);
   const [matchStatus, setMatchStatus] = useState<MatchStatus>('idle');
   const [currentPartner, setCurrentPartner] = useState<MatchPartner | null>(null);
   const [chatMode, setChatMode] = useState<ChatMode>('video');
@@ -268,6 +271,29 @@ export const SocialDiscoveryProvider: React.FC<{ children: ReactNode }> = ({ chi
         wsRef.current = ws;
 
         ws.onopen = () => {
+          console.log('[Collide WS] Connected successfully to', url);
+          setIsWsConnected(true);
+          if (pendingQueueJoinRef.current) {
+            const pending = pendingQueueJoinRef.current;
+            pendingQueueJoinRef.current = null;
+            ws?.send(
+              JSON.stringify({
+                event: 'queue.join',
+                payload: {
+                  mode: pending.mode,
+                  algorithm: pending.algorithm,
+                  ageVerified: localStorage.getItem('collide_age_verified') === 'true',
+                  profile: {
+                    pseudonym: userProfile.pseudonym,
+                    avatarUrl: userProfile.avatarUrl,
+                    interests: userProfile.interests,
+                    language: userProfile.language,
+                    country: userProfile.country,
+                  },
+                },
+              })
+            );
+          }
         };
 
         ws.onmessage = (event) => {
@@ -363,11 +389,14 @@ export const SocialDiscoveryProvider: React.FC<{ children: ReactNode }> = ({ chi
         };
 
         ws.onclose = () => {
+          setIsWsConnected(false);
           wsRef.current = null;
           reconnectTimeout = setTimeout(connectWs, 3000);
         };
 
-        ws.onerror = () => {
+        ws.onerror = (err) => {
+          console.error('[Collide WS] Connection failed to', url, err);
+          setIsWsConnected(false);
           ws?.close();
         };
       } catch {
@@ -415,6 +444,9 @@ export const SocialDiscoveryProvider: React.FC<{ children: ReactNode }> = ({ chi
             },
           })
         );
+      } else {
+        console.warn('[Collide] WebSocket is connecting. Queuing join request for when connection opens.');
+        pendingQueueJoinRef.current = { mode: targetMode, algorithm: targetAlgorithm };
       }
     },
     [chatMode, matchAlgorithm, userProfile]
@@ -966,6 +998,7 @@ export const SocialDiscoveryProvider: React.FC<{ children: ReactNode }> = ({ chi
   return (
     <SocialDiscoveryContext.Provider
       value={{
+        isWsConnected,
         userProfile,
         authUser,
         matchStatus,

@@ -1,11 +1,14 @@
 import { AuthUser, UserProfile, SafetyReport, BlockRecord } from '../types';
 
-export const API_BASE_URL =
-  (import.meta.env?.VITE_API_BASE_URL as string) ||
-  (typeof window !== 'undefined' && (window as unknown as { __ENV_API_URL?: string }).__ENV_API_URL) ||
-  'http://localhost:8000';
+// Set VITE_API_BASE_URL in your deployment environment to your backend URL
+// e.g. https://collide-backend.onrender.com
+export const API_BASE_URL: string =
+  (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://localhost:8000';
 
-export const WS_BASE_URL = API_BASE_URL.replace(/^http/, 'ws');
+// Auto-upgrades http→ws and https→wss so HTTPS deployments use secure WebSockets
+export const WS_BASE_URL: string = API_BASE_URL.startsWith('https://')
+  ? API_BASE_URL.replace(/^https:\/\//, 'wss://')
+  : API_BASE_URL.replace(/^http:\/\//, 'ws://');
 
 export interface AuthApiResponse {
   user: AuthUser;

@@ -78,6 +78,7 @@ class EventRouter:
         if room_id and partner:
             connection_manager.join_room(room_id, user_id)
             connection_manager.join_room(room_id, partner.id)
+            # Send match.found to the NEW user — their partner is the waiting peer
             await connection_manager.send_to_user(user_id, {
                 "event": "match.found",
                 "payload": {
@@ -86,16 +87,20 @@ class EventRouter:
                 },
                 "timestamp": int(time.time() * 1000)
             })
-            user_partner_data = await room_service.get_partner_profile(partner.id)
-            if user_partner_data:
+            # Send match.found to the WAITING peer — their partner is the new user.
+            # get_partner_profile(user_id) returns the new user's profile as seen by the peer.
+            peer_sees_user = await room_service.get_partner_profile(user_id)
+            if peer_sees_user:
                 await connection_manager.send_to_user(partner.id, {
                     "event": "match.found",
                     "payload": {
                         "roomId": room_id,
-                        "partner": user_partner_data,
+                        "partner": peer_sees_user,
                     },
                     "timestamp": int(time.time() * 1000)
                 })
+            else:
+                logger.warning(f"Could not load partner profile for peer {partner.id}, sending minimal data.")
         else:
             queue_depth = await matching_service.get_queue_depth(mode)
             await connection_manager.send_to_user(user_id, {

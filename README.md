@@ -199,7 +199,3 @@ docker run -p 8000:8000 --env-file .env stravair-backend
 - **Mutual Consensual Connections**: Contact exchange requires affirmative two-way consent from both parties.
 
 ---
-
-## 📄 License
-
-This project is licensed under the [MIT License](LICENSE).

@@ -31,6 +31,7 @@ import { COPILOT_ICEBREAKERS } from '../../lib/games';
 import { getLanguageFlag, getLanguageLabel } from '../../lib/matchmaking';
 import { EmojiReaction } from '../../components/EmojiReaction';
 import { synthesizeVoiceNote } from '../../lib/voice_audio';
+import { WS_BASE_URL } from '../../lib/api';
 
 const EMOJI_MAP: Record<string, string> = {
   'waving-hand': '👋',
